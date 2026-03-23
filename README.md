@@ -1,26 +1,133 @@
 # OSM Raster Topology
 
-这个仓库提供一版面向自动驾驶场景的 `.osm -> 栅格地图` 实现。目标不是只生成一张道路二值图，而是输出统一的 `map_bundle.json`，把拓扑层、语义层、规则和对象栈收在一个 JSON 包里，同时保留一张预览图。
+这是一个面向自动驾驶地图表达的 `.osm -> 栅格地图` 工具。目标不是只生成一张普通道路二值图，而是把道路拓扑、道路语义、建筑与运动场语义、对象身份和量化验证结果一起导出，形成一套可检查的栅格化结果。
 
-## 当前能力
+当前版本以 `.osm` XML 为输入，输出统一的 `map_bundle.json`、栅格预览图和 `matplotlib` 生成的量化验证图。
+
+## 功能概览
 
 - 读取 `.osm` XML
 - 解析 `node`、`way`、`multipolygon relation`
-- 解析 `restriction` relation 并导出转向限制
-- 输出道路超采样拓扑栅格
-- 输出建筑填充和建筑边界
-- 输出运动场与体育设施填充和边界
-- 输出道路语义层：道路类型、单行、通行属性、车道数、限速、路面材质
-- 输出 topology sidecar，保存图结构、多对象重叠和转向限制
+- 解析 `restriction relation`
+- 生成拓扑感知道路栅格
+- 生成建筑填充、建筑边界和建筑语义
+- 生成运动场填充、边界和运动场语义
+- 生成道路语义层：
+  - `highway_class`
+  - `oneway`
+  - `access`
+  - `foot`
+  - `bicycle`
+  - `lanes`
+  - `maxspeed`
+  - `surface`
+- 生成 topology sidecar
+- 生成量化验证结果：
+  - 道路/建筑/运动场保留率
+  - 道路平面拓扑差值
+  - 道路缺失与断裂
+  - 节点锚点诊断
+  - 道路语义覆盖率
 
-## 主要输出
+## 安装
 
-`build/.../map_bundle.json` 中统一包含这些关键层：
+建议使用 Python 3.11 及以上版本。
+
+安装基础依赖：
+
+```bash
+pip install -e .
+```
+
+如果要安装运行时附加依赖：
+
+```bash
+pip install -e .[runtime]
+```
+
+## 快速开始
+
+### 1. 预检查
+
+```bash
+python -m osm_raster_topology check --input your_map.osm --outdir output_dir
+```
+
+这个命令会检查：
+
+- 输入文件是否存在
+- 当前是否支持直接运行
+- 依赖是否齐全
+- 当前像素分辨率与超采样配置
+
+### 2. 正式运行
+
+```bash
+python -m osm_raster_topology run --input your_map.osm --outdir output_dir --pixel-size 1.0
+```
+
+参数说明：
+
+- `--input`：输入 `.osm` 文件路径
+- `--outdir`：输出目录
+- `--pixel-size`：输出栅格像素大小，单位米
+- `--target-crs`：当前固定为 `EPSG:3857`
+
+### 3. 设计包输出
+
+如果你只想先看输出契约和图层设计，不跑正式栅格化：
+
+```bash
+python -m osm_raster_topology design --input your_map.osm --outdir design_dir
+```
+
+## 输出文件
+
+运行完成后，输出目录下会生成这些内容：
+
+- `map_bundle.json`
+- `validation_report.png`
+- `raster/preview.png`
+- `topology/`
+- `validation/`
+
+### `map_bundle.json`
+
+这是主结果文件，包含：
+
+- 元数据
+- 图层定义
+- 语义编码表
+- topology policy
+- 量化验证结果
+- topology sidecar
+- 对象栈
+- 栅格层数据
+- 结果产物路径
+
+### `validation_report.png`
+
+这是论文风格的量化验证图，由 `matplotlib` 生成。当前包含 4 个子图：
+
+- `(a)` 栅格预览
+- `(b)` 转换前后要素数量对比
+- `(c)` 保留率与覆盖率
+- `(d)` 诊断项与边界条件
+
+### `raster/preview.png`
+
+用于快速查看结果效果的栅格预览图。
+
+## 当前输出的主要图层
+
+当前 `map_bundle.json` 中会导出这些关键层：
 
 - `road_topology_super`
 - `road_direction_bits_super`
 - `node_anchor_super`
 - `road_edges`
+- `water_lines`
+- `crossing_structure`
 - `highway_class`
 - `road_oneway`
 - `road_access`
@@ -33,51 +140,69 @@
 - `building_boundary`
 - `building_class`
 - `building_levels`
+- `building_min_level`
 - `sports_fill`
 - `sports_boundary`
 - `sports_class`
 - `turn_restriction_via_mask`
 - `line_object_ids`
-- `road_object_stack`
+- `line_multi_object_count`
+- `area_object_ids`
 
-同时会生成：
+## 量化验证口径
 
-- `map_bundle.json`
-- `raster/preview.png`
+当前验证逻辑在 [src/osm_raster_topology/validate.py](/B:/Codes/osm/src/osm_raster_topology/validate.py)。
 
-## 设计思路
+主要指标包括：
 
-1. 道路主拓扑不直接落单层 mask，而是落在 4x 超采样栅格上。
-2. 节点、方向位掩码和对象栈共同用于避免误连、断裂和身份丢失。
-3. 建筑不只输出填充区域，还输出边界。
-4. 交通规则和语义属性统一写进 `map_bundle.json`。
+- `road_missing_feature_count`
+  - 源 OSM 中的道路要素在输出对象栈中完全找不到
+- `road_fragmented_feature_count`
+  - 单条道路在栅格化后裂成多个 8 邻接连通分量
+- `road_component_delta_planar`
+  - 栅格道路连通分量数减去源路网平面连通分量数
+- `road_component_delta_z_aware`
+  - 栅格道路连通分量数减去源路网分层连通分量数
+- `node_anchor_missing_pixel_count`
+  - 范围内图节点对应的锚点像素未写入
+- `node_anchor_out_of_bounds_count`
+  - 图节点投影后落在当前栅格范围外
+- 道路语义覆盖率
+  - 对带标签道路逐项检查 `oneway/access/foot/bicycle/lanes/maxspeed/surface` 是否保留
 
-## 命令
+## 项目结构
 
-预检：
-
-```bash
-python -m osm_raster_topology check --input tongji.osm --outdir build/check
-```
-
-运行：
-
-```bash
-python -m osm_raster_topology run --input tongji.osm --outdir build/run --pixel-size 1.0
-```
+- [src/osm_raster_topology/cli.py](/B:/Codes/osm/src/osm_raster_topology/cli.py)
+  - 命令行入口
+- [src/osm_raster_topology/pipeline.py](/B:/Codes/osm/src/osm_raster_topology/pipeline.py)
+  - 主流程编排
+- [src/osm_raster_topology/ingest.py](/B:/Codes/osm/src/osm_raster_topology/ingest.py)
+  - OSM XML 解析
+- [src/osm_raster_topology/rasterize.py](/B:/Codes/osm/src/osm_raster_topology/rasterize.py)
+  - 栅格化与语义写入
+- [src/osm_raster_topology/sidecar.py](/B:/Codes/osm/src/osm_raster_topology/sidecar.py)
+  - topology sidecar 构建
+- [src/osm_raster_topology/validate.py](/B:/Codes/osm/src/osm_raster_topology/validate.py)
+  - 量化验证
+- [src/osm_raster_topology/report.py](/B:/Codes/osm/src/osm_raster_topology/report.py)
+  - `matplotlib` 量化图生成
 
 ## 当前边界
 
-- 只支持 `.osm` XML，不支持 `.pbf`
-- `relation` 中主栅格只处理 `multipolygon`
-- 坐标系固定为 `EPSG:3857`
-- 输出格式为 `PNG + NPZ + JSON`
+- 当前只支持 `.osm` XML，不支持 `.pbf`
+- 当前坐标系固定为 `EPSG:3857`
+- `relation` 主栅格仅处理 `multipolygon`
+- 桥、隧道、`layer` 这类非平面拓扑不能只靠单层二维道路栅格完整表达，当前通过 sidecar 和 crossing 相关层补充保留
+- 当前主入口是命令行；如果后续需要桌面 UI，需要继续补独立入口
 
-## 代码入口
+## 一个最小示例
 
-- [cli.py](B:\Codes\osm\src\osm_raster_topology\cli.py)
-- [pipeline.py](B:\Codes\osm\src\osm_raster_topology\pipeline.py)
-- [ingest.py](B:\Codes\osm\src\osm_raster_topology\ingest.py)
-- [rasterize.py](B:\Codes\osm\src\osm_raster_topology\rasterize.py)
-- [sidecar.py](B:\Codes\osm\src\osm_raster_topology\sidecar.py)
-- [validate.py](B:\Codes\osm\src\osm_raster_topology\validate.py)
+```bash
+python -m osm_raster_topology run --input tongji.osm --outdir build/run_bundle --pixel-size 1.0
+```
+
+运行后可以重点查看：
+
+- `build/run_bundle/map_bundle.json`
+- `build/run_bundle/validation_report.png`
+- `build/run_bundle/raster/preview.png`
