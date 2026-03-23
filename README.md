@@ -1,69 +1,38 @@
 # OSM Raster Topology
 
-这是一个面向自动驾驶地图表达的 `.osm -> 栅格地图` 工具。它不只是输出一张普通道路位图，而是同时导出：
+面向自动驾驶场景的 `.osm -> 栅格地图` 转换工具。  
+当前版本输出的不只是普通道路位图，还包含：
 
-- 道路拓扑栅格
+- 拓扑感知道路栅格
 - 道路语义层
-- 建筑和运动场语义
+- 建筑/运动场语义层
 - topology sidecar
-- 量化验证结果
+- 量化验证结果与验证图
 
-当前版本支持命令行运行，也支持桌面 GUI 端到端运行。
+## 当前能力
 
-## 功能
+- 支持输入：`.osm` XML
+- 解析：`node` / `way` / `multipolygon relation` / `restriction relation`
+- 输出：
+  - `map_bundle.json`
+  - `raster/preview.png`
+  - `validation_report.png`（`matplotlib` 生成）
+- 量化验证：
+  - 道路缺失、道路断裂
+  - 平面分量差值、分层分量差值
+  - 节点锚点缺失/越界/碰撞
+  - 道路语义覆盖率
 
-- 读取 `.osm` XML
-- 解析 `node`、`way`、`multipolygon relation`
-- 解析 `restriction relation`
-- 生成道路拓扑栅格
-- 生成建筑填充、边界和语义
-- 生成运动场填充、边界和语义
-- 生成道路语义层：
-  - `highway_class`
-  - `oneway`
-  - `access`
-  - `foot`
-  - `bicycle`
-  - `lanes`
-  - `maxspeed`
-  - `surface`
-- 生成统一结果包 `map_bundle.json`
-- 生成栅格预览图 `preview.png`
-- 生成 `matplotlib` 量化验证图 `validation_report.png`
-
-## 安装
-
-建议使用 Python 3.11 及以上版本。
-
-强烈建议先创建虚拟环境，再安装依赖。不要直接装到系统 Python 里，否则很容易出现版本冲突、依赖污染或命令找不到的问题。
+## 推荐运行方式（虚拟环境）
 
 ### Windows PowerShell
-
-在项目根目录执行：
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -e .
-```
-
-如果需要 GUI 拖拽功能：
-
-```powershell
 pip install -e .[gui]
-```
-
-如果需要 GIS 相关附加依赖：
-
-```powershell
-pip install -e .[runtime]
-```
-
-退出虚拟环境：
-
-```powershell
-deactivate
 ```
 
 ### macOS / Linux
@@ -73,237 +42,112 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -e .
-```
-
-附加依赖安装方式相同：
-
-```bash
-pip install -e .[gui]
-pip install -e .[runtime]
-```
-
-退出虚拟环境：
-
-```bash
-deactivate
-```
-
-### 基础安装
-
-```bash
-pip install -e .
-```
-
-如果需要拖拽 GUI，可安装 GUI 附加依赖：
-
-```bash
 pip install -e .[gui]
 ```
 
-如果需要 GIS 相关附加依赖：
+## 一键启动脚本（Windows）
 
-```bash
-pip install -e .[runtime]
-```
+项目根目录提供了 [start.ps1](/B:/Codes/osm/start.ps1)。
 
-### 推荐运行方式
-
-每次使用项目前，先进入虚拟环境，再运行命令。
-
-Windows PowerShell：
+### 1. 启动 GUI
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
-python -m osm_raster_topology gui
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
-或：
+### 2. 命令行 `run`
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
-python -m osm_raster_topology run --input your_map.osm --outdir output_dir --pixel-size 1.0
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 `
+  -Mode run `
+  -InputPath .\tongji.osm `
+  -OutputDir .\build\run_bundle `
+  -PixelSize 1.0
 ```
 
-macOS / Linux：
+### 3. 命令行 `check`
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 `
+  -Mode check `
+  -InputPath .\tongji.osm `
+  -OutputDir .\build\check_bundle
+```
+
+### 脚本参数
+
+- `-Mode gui|run|check|design`
+- `-InputPath <osm 文件路径>`
+- `-OutputDir <输出目录>`
+- `-PixelSize <像素分辨率>`
+- `-TargetCrs`（当前固定 `EPSG:3857`）
+- `-SkipInstall`（跳过安装步骤）
+
+## 直接用 CLI
+
+### 启动 GUI
 
 ```bash
-source .venv/bin/activate
 python -m osm_raster_topology gui
 ```
 
-## 端到端使用
-
-### 方式 1：桌面 GUI
-
-启动 GUI：
-
-```bash
-python -m osm_raster_topology gui
-```
-
-或者安装后直接运行：
-
-```bash
-osm-topology-ui
-```
-
-GUI 使用流程：
-
-1. 选择或拖入 `.osm` 文件
-2. 选择输出目录
-3. 设置像素分辨率
-4. 点击“开始转换”
-
-运行完成后，会在你选择的输出目录下生成全部结果文件。
-
-说明：
-
-- 如果没有安装 `tkinterdnd2`，拖拽不可用，但点击选择文件仍然可用
-- 当前 GUI 不会写死输入路径和输出路径，全部由用户选择
-
-### 方式 2：命令行
-
-预检查：
+### 预检查
 
 ```bash
 python -m osm_raster_topology check --input your_map.osm --outdir output_dir
 ```
 
-正式运行：
+### 正式运行
 
 ```bash
 python -m osm_raster_topology run --input your_map.osm --outdir output_dir --pixel-size 1.0
 ```
 
-参数说明：
+## 输出文件说明
 
-- `--input`：输入 `.osm` 文件路径
-- `--outdir`：输出目录
-- `--pixel-size`：像素大小，单位米
-- `--target-crs`：当前固定为 `EPSG:3857`
+运行完成后，输出目录通常包含：
 
-## 输出文件
-
-运行完成后，输出目录下通常会生成：
-
-- `map_bundle.json`
-- `validation_report.png`
-- `raster/preview.png`
+- `map_bundle.json`：主结果包（图层、语义、拓扑、验证）
+- `raster/preview.png`：地图预览
+- `validation_report.png`：量化图
 - `topology/`
 - `validation/`
 
-### `map_bundle.json`
+## 量化图说明
 
-这是主结果文件，包含：
-
-- 元数据
-- 图层定义
-- 语义编码表
-- topology policy
-- 验证结果
-- topology sidecar
-- 对象栈
-- 栅格层数据
-
-### `validation_report.png`
-
-这是论文风格的量化验证图，由 `matplotlib` 生成。当前包含：
+`validation_report.png` 当前为中文论文风格 4 子图：
 
 - `(a)` 栅格预览
 - `(b)` 转换前后要素数量对比
 - `(c)` 保留率与覆盖率
-- `(d)` 诊断项与边界条件
+- `(d)` 诊断项与边界条件 + 指标定义说明
 
-### `raster/preview.png`
+`(d)` 中定义了这些指标：
 
-用于快速查看转换结果的预览图。
-
-## 当前输出的主要图层
-
-当前 `map_bundle.json` 中包含这些关键层：
-
-- `road_topology_super`
-- `road_direction_bits_super`
-- `node_anchor_super`
-- `road_edges`
-- `water_lines`
-- `crossing_structure`
-- `highway_class`
-- `road_oneway`
-- `road_access`
-- `road_foot`
-- `road_bicycle`
-- `road_lanes`
-- `road_maxspeed_kph`
-- `road_surface_class`
-- `building_fill`
-- `building_boundary`
-- `building_class`
-- `building_levels`
-- `building_min_level`
-- `sports_fill`
-- `sports_boundary`
-- `sports_class`
-- `turn_restriction_via_mask`
-- `line_object_ids`
-- `line_multi_object_count`
-- `area_object_ids`
-
-## 量化验证口径
-
-验证逻辑位于 [validate.py](/B:/Codes/osm/src/osm_raster_topology/validate.py)。
-
-主要指标包括：
-
-- `road_missing_feature_count`
-  - 源 OSM 中的道路要素在输出对象栈中完全找不到
-- `road_fragmented_feature_count`
-  - 单条道路栅格化后裂成多个 8 邻接连通分量
-- `road_component_delta_planar`
-  - 栅格道路连通分量数减去源路网平面连通分量数
-- `road_component_delta_z_aware`
-  - 栅格道路连通分量数减去源路网分层连通分量数
-- `node_anchor_missing_pixel_count`
-  - 范围内图节点对应的锚点像素未写入
-- `node_anchor_out_of_bounds_count`
-  - 图节点投影后落在当前栅格范围外
-- 道路语义覆盖率
-  - 对带标签道路逐项检查 `oneway/access/foot/bicycle/lanes/maxspeed/surface` 是否保留
+- 道路缺失
+- 道路断裂
+- 平面分量差值
+- 分层分量差值
+- 对象栈溢出
+- 锚点缺失
+- 节点越界
+- 节点碰撞
+- 多对象像素
 
 ## 项目结构
 
-- [src/osm_raster_topology/cli.py](/B:/Codes/osm/src/osm_raster_topology/cli.py)
-  - 命令行入口
-- [src/osm_raster_topology/gui.py](/B:/Codes/osm/src/osm_raster_topology/gui.py)
-  - 桌面 GUI 入口
-- [src/osm_raster_topology/pipeline.py](/B:/Codes/osm/src/osm_raster_topology/pipeline.py)
-  - 主流程编排
-- [src/osm_raster_topology/ingest.py](/B:/Codes/osm/src/osm_raster_topology/ingest.py)
-  - OSM XML 解析
-- [src/osm_raster_topology/rasterize.py](/B:/Codes/osm/src/osm_raster_topology/rasterize.py)
-  - 栅格化与语义写入
-- [src/osm_raster_topology/sidecar.py](/B:/Codes/osm/src/osm_raster_topology/sidecar.py)
-  - topology sidecar 构建
-- [src/osm_raster_topology/validate.py](/B:/Codes/osm/src/osm_raster_topology/validate.py)
-  - 量化验证
-- [src/osm_raster_topology/report.py](/B:/Codes/osm/src/osm_raster_topology/report.py)
-  - `matplotlib` 验证图生成
+- [cli.py](/B:/Codes/osm/src/osm_raster_topology/cli.py)
+- [gui.py](/B:/Codes/osm/src/osm_raster_topology/gui.py)
+- [pipeline.py](/B:/Codes/osm/src/osm_raster_topology/pipeline.py)
+- [ingest.py](/B:/Codes/osm/src/osm_raster_topology/ingest.py)
+- [rasterize.py](/B:/Codes/osm/src/osm_raster_topology/rasterize.py)
+- [sidecar.py](/B:/Codes/osm/src/osm_raster_topology/sidecar.py)
+- [validate.py](/B:/Codes/osm/src/osm_raster_topology/validate.py)
+- [report.py](/B:/Codes/osm/src/osm_raster_topology/report.py)
 
 ## 当前边界
 
-- 当前只支持 `.osm` XML，不支持 `.pbf`
-- 当前坐标系固定为 `EPSG:3857`
+- 仅支持 `.osm` XML（暂不支持 `.pbf`）
+- `target_crs` 当前固定 `EPSG:3857`
 - `relation` 主栅格仅处理 `multipolygon`
-- 桥、隧道、`layer` 这类非平面拓扑不能只靠单层二维道路栅格完整表达，当前通过 sidecar 和 crossing 相关层补充保留
-
-## 最小示例
-
-```bash
-python -m osm_raster_topology run --input tongji.osm --outdir build/run_bundle --pixel-size 1.0
-```
-
-运行后重点查看：
-
-- `build/run_bundle/map_bundle.json`
-- `build/run_bundle/validation_report.png`
-- `build/run_bundle/raster/preview.png`
+- 非平面拓扑（桥/隧/layer）不能仅靠单层二维道路栅格完整表达，当前通过 sidecar + crossing 层补充保留
