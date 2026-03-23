@@ -22,31 +22,41 @@ def write_validation_report(bundle: dict[str, object], output_path: Path) -> Non
     roads = validation["roads"]
     water = validation["water"]
     polygons = validation["polygons"]
-    nodes = validation["nodes"]
-    semantics = validation["semantics"]
-    turn_restrictions = validation["turn_restrictions"]
     summary = validation["summary"]
     checks = validation["checks"]
 
-    fig = plt.figure(figsize=(14, 8.4), dpi=220, constrained_layout=True)
-    gs = fig.add_gridspec(2, 2, width_ratios=[1.05, 1.25], height_ratios=[1.0, 1.0])
+    fig = plt.figure(figsize=(14, 8.6), dpi=220)
+    gs = fig.add_gridspec(
+        2,
+        2,
+        width_ratios=[1.0, 1.3],
+        height_ratios=[1.0, 1.0],
+        left=0.07,
+        right=0.985,
+        top=0.89,
+        bottom=0.10,
+        wspace=0.24,
+        hspace=0.16,
+    )
 
     ax_preview = fig.add_subplot(gs[0, 0])
     ax_counts = fig.add_subplot(gs[0, 1])
     ax_ratios = fig.add_subplot(gs[1, 0])
-    ax_diag = fig.add_subplot(gs[1, 1])
+    diag_gs = gs[1, 1].subgridspec(1, 2, width_ratios=[0.74, 0.26], wspace=0.04)
+    ax_diag = fig.add_subplot(diag_gs[0, 0])
+    ax_diag_note = fig.add_subplot(diag_gs[0, 1])
 
     _draw_preview(ax_preview, preview_path)
     _draw_feature_counts(ax_counts, roads, water, polygons)
     _draw_ratio_panel(ax_ratios, summary)
-    _draw_diagnostics(ax_diag, checks, nodes, metadata, roads, semantics, turn_restrictions)
+    _draw_diagnostics(ax_diag, ax_diag_note, checks)
 
-    fig.suptitle("OSM-to-Raster Conversion Validation", fontsize=18, fontweight="bold", y=1.02)
+    fig.suptitle("OSM 转栅格量化验证", fontsize=18, fontweight="bold", y=0.975)
     fig.text(
-        0.01,
-        0.995,
-        f"Input: {metadata['input_path']} | Pixel size: {metadata['pixel_size']} m | Oversample: {metadata['topology_oversample']}x",
-        fontsize=9,
+        0.015,
+        0.948,
+        f"输入文件: {metadata['input_path']} | 像素分辨率: {metadata['pixel_size']} m | 拓扑超采样: {metadata['topology_oversample']}x",
+        fontsize=8.5,
         color="#4f5b4f",
         va="top",
     )
@@ -58,12 +68,12 @@ def write_validation_report(bundle: dict[str, object], output_path: Path) -> Non
 def _draw_preview(ax: plt.Axes, preview_path: Path) -> None:
     image = Image.open(preview_path).convert("RGB")
     ax.imshow(image)
-    ax.set_title("(a) Raster Preview", loc="left", fontsize=12, fontweight="bold")
+    ax.set_title("(a) 栅格预览", loc="left", fontsize=11.5, fontweight="bold", pad=6)
     ax.axis("off")
 
 
 def _draw_feature_counts(ax: plt.Axes, roads: dict[str, object], water: dict[str, object], polygons: dict[str, object]) -> None:
-    categories = ["Road", "Water", "Building", "Sports"]
+    categories = ["道路", "水系", "建筑", "运动场"]
     source = np.array(
         [
             roads["source_feature_count"],
@@ -85,30 +95,30 @@ def _draw_feature_counts(ax: plt.Axes, roads: dict[str, object], water: dict[str
     x = np.arange(len(categories))
     width = 0.34
 
-    ax.bar(x - width / 2, source, width=width, color="#cfd8cf", edgecolor="#7c897c", linewidth=0.8, label="Source")
-    ax.bar(x + width / 2, exported, width=width, color="#2f7d32", edgecolor="#1f5b22", linewidth=0.8, label="Raster")
+    ax.bar(x - width / 2, source, width=width, color="#cfd8cf", edgecolor="#7c897c", linewidth=0.8, label="转换前")
+    ax.bar(x + width / 2, exported, width=width, color="#2f7d32", edgecolor="#1f5b22", linewidth=0.8, label="转换后")
 
     for index, (s_val, e_val) in enumerate(zip(source, exported, strict=False)):
         ratio = 1.0 if s_val == 0 else e_val / s_val
         ax.text(index, max(s_val, e_val) + max(source) * 0.03, f"{ratio * 100:.0f}%", ha="center", va="bottom", fontsize=9)
 
-    ax.set_title("(b) Feature Counts Before and After Conversion", loc="left", fontsize=12, fontweight="bold")
-    ax.set_ylabel("Feature count")
+    ax.set_title("(b) 转换前后要素数量对比", loc="left", fontsize=11.5, fontweight="bold", pad=6)
+    ax.set_ylabel("要素数量")
     ax.set_xticks(x, categories)
     ax.grid(axis="y", color="#e6ebe6", linewidth=0.8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(frameon=False, ncol=2, loc="upper right")
+    ax.legend(frameon=False, ncol=2, loc="upper right", fontsize=9, handlelength=1.8, columnspacing=1.4)
 
 
 def _draw_ratio_panel(ax: plt.Axes, summary: dict[str, object]) -> None:
     labels = [
-        "Road retention",
-        "Building retention",
-        "Sports retention",
-        "Road semantic coverage",
-        "Turn restriction coverage",
-        "Anchor coverage",
+        "道路保留率",
+        "建筑保留率",
+        "运动场保留率",
+        "道路语义覆盖率",
+        "转向限制覆盖率",
+        "锚点覆盖率",
     ]
     values = np.array(
         [
@@ -128,9 +138,9 @@ def _draw_ratio_panel(ax: plt.Axes, summary: dict[str, object]) -> None:
     for index, value in enumerate(values):
         ax.text(min(value + 0.015, 1.02), index, f"{value * 100:.1f}%", va="center", fontsize=9)
 
-    ax.set_title("(c) Preservation and Coverage Ratios", loc="left", fontsize=12, fontweight="bold")
+    ax.set_title("(c) 保留率与覆盖率", loc="left", fontsize=11.5, fontweight="bold", pad=6)
     ax.set_xlim(0, 1.05)
-    ax.set_xlabel("Ratio")
+    ax.set_xlabel("比例")
     ax.set_yticks(y, labels)
     ax.invert_yaxis()
     ax.grid(axis="x", color="#e6ebe6", linewidth=0.8)
@@ -140,23 +150,19 @@ def _draw_ratio_panel(ax: plt.Axes, summary: dict[str, object]) -> None:
 
 def _draw_diagnostics(
     ax: plt.Axes,
+    ax_note: plt.Axes,
     checks: dict[str, object],
-    nodes: dict[str, object],
-    metadata: dict[str, object],
-    roads: dict[str, object],
-    semantics: dict[str, object],
-    turn_restrictions: dict[str, object],
 ) -> None:
     metrics = [
-        ("Road missing", checks["road_missing_feature_count"]),
-        ("Road fragmented", checks["road_fragmented_feature_count"]),
-        ("Planar component delta", checks["road_component_delta_planar"]),
-        ("Z-aware component delta", checks["road_component_delta_z_aware"]),
-        ("Object-stack overflow", checks["road_object_overflow_pixels"]),
-        ("Node anchor missing", checks["node_anchor_missing_pixel_count"]),
-        ("Node out-of-bounds", checks["node_anchor_out_of_bounds_count"]),
-        ("Node collisions", checks["node_anchor_collision_count"]),
-        ("Multi-object pixels", checks["road_multi_object_pixels"]),
+        ("道路缺失", checks["road_missing_feature_count"]),
+        ("道路断裂", checks["road_fragmented_feature_count"]),
+        ("平面分量差值", checks["road_component_delta_planar"]),
+        ("分层分量差值", checks["road_component_delta_z_aware"]),
+        ("对象栈溢出", checks["road_object_overflow_pixels"]),
+        ("锚点缺失", checks["node_anchor_missing_pixel_count"]),
+        ("节点越界", checks["node_anchor_out_of_bounds_count"]),
+        ("节点碰撞", checks["node_anchor_collision_count"]),
+        ("多对象像素", checks["road_multi_object_pixels"]),
     ]
     labels = [item[0] for item in metrics]
     signed_values = np.array([float(item[1]) for item in metrics], dtype=float)
@@ -166,35 +172,42 @@ def _draw_diagnostics(
     colors[-1] = "#6f7d6f"
 
     ax.barh(y, display_values, color=colors, edgecolor="#4f5b4f", linewidth=0.6)
+    max_display = max(float(display_values.max()), 1.0)
     for index, value in enumerate(signed_values):
-        ax.text(display_values[index] + max(display_values) * 0.02 + 0.5, index, f"{int(value)}", va="center", fontsize=9)
+        ax.text(display_values[index] + max_display * 0.02 + 0.5, index, f"{int(value)}", va="center", fontsize=9)
 
-    ax.set_title("(d) Diagnostic Counts and Boundary Conditions", loc="left", fontsize=12, fontweight="bold")
-    ax.set_xlabel("Absolute count")
+    ax.set_title("(d) 诊断项与边界条件", loc="left", fontsize=11.5, fontweight="bold", pad=6)
+    ax.set_xlabel("绝对数量")
     ax.set_yticks(y, labels)
     ax.invert_yaxis()
+    ax.set_xlim(0, max_display * 1.08)
     ax.grid(axis="x", color="#e6ebe6", linewidth=0.8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
     note_lines = [
-        f"Raw nodes/ways/relations: {metadata['feature_stats']['raw_node_count']}/{metadata['feature_stats']['raw_way_count']}/{metadata['feature_stats']['raw_relation_count']}",
-        f"Road components: source planar {roads['source_component_count_planar']} -> raster {roads['raster_component_count']}",
-        f"Tagged road classes covered: {semantics['highway_class']['covered_feature_count']}/{semantics['highway_class']['source_tagged_feature_count']}",
-        f"Turn restrictions covered: {turn_restrictions['covered_count']}/{turn_restrictions['source_count']}",
-        "Out-of-bounds nodes are excluded from loss accounting.",
-        "Non-zero z-aware delta indicates non-planar topology preserved in sidecar, not in 2D road mask.",
+        "指标定义:",
+        "道路缺失: 源 OSM 道路要素在栅格对象栈中完全找不到。",
+        "道路断裂: 单条道路被栅格化后裂成多个 8 邻接连通分量。",
+        "平面分量差值: 栅格道路连通分量数 - 源路网平面连通分量数。",
+        "分层分量差值: 栅格道路连通分量数 - 源路网分层连通分量数。",
+        "对象栈溢出: 单像素内对象数超过 object stack 深度上限。",
+        "锚点缺失: 范围内图节点对应的 node anchor 像素未写入。",
+        "节点越界: 图节点投影后落在当前栅格范围外，不计入缺失。",
+        "节点碰撞: 多个图节点投影到同一锚点像素，常见于桥/隧/分层重合。",
+        "多对象像素: 同一像素同时属于多条道路或线对象。",
     ]
-    ax.text(
-        0.02,
-        0.02,
+    ax_note.axis("off")
+    ax_note.text(
+        0.98,
+        0.5,
         "\n".join(note_lines),
-        transform=ax.transAxes,
-        fontsize=8.5,
+        transform=ax_note.transAxes,
+        fontsize=7.8,
         color="#4f5b4f",
-        va="bottom",
-        ha="left",
-        bbox={"facecolor": "white", "edgecolor": "#d8ded8", "boxstyle": "round,pad=0.35"},
+        va="center",
+        ha="right",
+        bbox={"facecolor": "white", "edgecolor": "#d8ded8", "boxstyle": "round,pad=0.30"},
     )
 
 
