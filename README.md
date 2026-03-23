@@ -35,7 +35,60 @@
 
 建议使用 Python 3.11 及以上版本。
 
-基础安装：
+强烈建议先创建虚拟环境，再安装依赖。不要直接装到系统 Python 里，否则很容易出现版本冲突、依赖污染或命令找不到的问题。
+
+### Windows PowerShell
+
+在项目根目录执行：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e .
+```
+
+如果需要 GUI 拖拽功能：
+
+```powershell
+pip install -e .[gui]
+```
+
+如果需要 GIS 相关附加依赖：
+
+```powershell
+pip install -e .[runtime]
+```
+
+退出虚拟环境：
+
+```powershell
+deactivate
+```
+
+### macOS / Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e .
+```
+
+附加依赖安装方式相同：
+
+```bash
+pip install -e .[gui]
+pip install -e .[runtime]
+```
+
+退出虚拟环境：
+
+```bash
+deactivate
+```
+
+### 基础安装
 
 ```bash
 pip install -e .
@@ -51,6 +104,31 @@ pip install -e .[gui]
 
 ```bash
 pip install -e .[runtime]
+```
+
+### 推荐运行方式
+
+每次使用项目前，先进入虚拟环境，再运行命令。
+
+Windows PowerShell：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m osm_raster_topology gui
+```
+
+或：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m osm_raster_topology run --input your_map.osm --outdir output_dir --pixel-size 1.0
+```
+
+macOS / Linux：
+
+```bash
+source .venv/bin/activate
+python -m osm_raster_topology gui
 ```
 
 ## 端到端使用
