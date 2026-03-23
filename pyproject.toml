@@ -22,12 +22,16 @@ runtime = [
   "rasterio>=1.3",
   "pyosmium>=4.0",
 ]
+gui = [
+  "tkinterdnd2>=0.4.2",
+]
 validation = [
   "scikit-image>=0.22",
 ]
 
 [project.scripts]
 osm-topology = "osm_raster_topology.cli:main"
+osm-topology-ui = "osm_raster_topology.gui:launch_gui"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

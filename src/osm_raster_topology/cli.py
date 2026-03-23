@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from osm_raster_topology.gui import launch_gui
 from osm_raster_topology.pipeline import build_run_config, check_runtime_dependencies, run_pipeline, write_design_bundle
 
 
@@ -28,6 +29,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run", parents=[common], help="Run the pure Python .osm to raster pipeline.")
     run.set_defaults(handler=handle_run)
+
+    gui = subparsers.add_parser("gui", help="Launch the desktop UI.")
+    gui.set_defaults(handler=handle_gui)
     return parser
 
 
@@ -75,6 +79,11 @@ def handle_run(args: argparse.Namespace) -> int:
     result = run_pipeline(config)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
+
+
+def handle_gui(args: argparse.Namespace) -> int:
+    _ = args
+    return launch_gui()
 
 
 def main() -> int:
