@@ -73,6 +73,8 @@ class IngestedData:
     graph_nodes: list[GraphNode]
     turn_restrictions: list[TurnRestriction]
     stats: dict[str, int | float | str]
+    ingest_backend: str = "osm_xml"
+    lanelet_relations: list[dict[str, object]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 

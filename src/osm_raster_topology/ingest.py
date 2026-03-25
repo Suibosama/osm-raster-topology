@@ -110,6 +110,8 @@ def ingest_osm(config: RunConfig) -> IngestedData:
         graph_nodes=graph_nodes,
         turn_restrictions=turn_restrictions,
         stats=stats,
+        ingest_backend="osm_xml",
+        lanelet_relations=[],
         notes=[
             "Current build supports .osm XML only and does not handle .pbf yet.",
             "Only multipolygon relations participate in raster export; route relations stay out of the main raster.",

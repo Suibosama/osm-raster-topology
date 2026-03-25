@@ -49,13 +49,64 @@ def write_validation_report(bundle: dict[str, object], output_path: Path) -> Non
     _draw_preview(ax_preview, preview_path)
     _draw_feature_counts(ax_counts, roads, water, polygons)
     _draw_ratio_panel(ax_ratios, summary)
-    _draw_diagnostics(ax_diag, ax_diag_note, checks)
+    _draw_diagnostics(ax_diag, ax_diag_note, checks, validation.get("lanelet", {}))
 
     fig.suptitle("OSM 转栅格量化验证", fontsize=18, fontweight="bold", y=0.975)
     fig.text(
         0.015,
         0.948,
         f"输入文件: {metadata['input_path']} | 像素分辨率: {metadata['pixel_size']} m | 拓扑超采样: {metadata['topology_oversample']}x",
+        fontsize=8.5,
+        color="#4f5b4f",
+        va="top",
+    )
+
+    fig.savefig(output_path, dpi=220, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def write_lanelet2_report(bundle: dict[str, object], output_path: Path) -> None:
+    _configure_fonts()
+
+    metadata = bundle["metadata"]
+    validation = bundle["validation"]
+    preview_path = Path(bundle["artifacts"]["preview_png"])
+
+    roads = validation["roads"]
+    water = validation["water"]
+    polygons = validation["polygons"]
+    checks = validation["checks"]
+    lanelet = validation.get("lanelet", {})
+
+    fig = plt.figure(figsize=(14, 8.6), dpi=220)
+    gs = fig.add_gridspec(
+        2,
+        2,
+        width_ratios=[1.0, 1.3],
+        height_ratios=[1.0, 1.0],
+        left=0.07,
+        right=0.985,
+        top=0.89,
+        bottom=0.14,
+        wspace=0.24,
+        hspace=0.16,
+    )
+
+    ax_preview = fig.add_subplot(gs[0, 0])
+    ax_counts = fig.add_subplot(gs[0, 1])
+    ax_lanelet = fig.add_subplot(gs[1, 0])
+    ax_diag = fig.add_subplot(gs[1, 1])
+
+    _draw_preview(ax_preview, preview_path)
+    _draw_feature_counts(ax_counts, roads, water, polygons)
+    _draw_lanelet_panel(ax_lanelet, lanelet)
+    _draw_diagnostics(ax_diag, fig.add_axes([0, 0, 0, 0]), checks, lanelet, hide_note=True)
+
+    fig.suptitle("Lanelet2 转栅格量化报告", fontsize=18, fontweight="bold", y=0.975)
+    fig.text(
+        0.015,
+        0.948,
+        f"输入文件: {metadata['input_path']} | 像素分辨率 {metadata['pixel_size']} m | 拓扑超采样 {metadata['topology_oversample']}x",
         fontsize=8.5,
         color="#4f5b4f",
         va="top",
@@ -152,6 +203,8 @@ def _draw_diagnostics(
     ax: plt.Axes,
     ax_note: plt.Axes,
     checks: dict[str, object],
+    lanelet: dict[str, object],
+    hide_note: bool = False,
 ) -> None:
     metrics = [
         ("道路缺失", checks["road_missing_feature_count"]),
@@ -197,17 +250,88 @@ def _draw_diagnostics(
         "节点碰撞: 多个图节点投影到同一锚点像素，常见于桥/隧/分层重合。",
         "多对象像素: 同一像素同时属于多条道路或线对象。",
     ]
-    ax_note.axis("off")
-    ax_note.text(
-        0.98,
-        0.5,
-        "\n".join(note_lines),
-        transform=ax_note.transAxes,
-        fontsize=7.8,
+    if not hide_note:
+        lanelet_count = int(lanelet.get("lanelet_count", 0))
+        if lanelet_count > 0:
+            note_lines.extend(
+                [
+                    "",
+                    "Lanelet2 指标:",
+                    f"lanelet 总数: {lanelet_count}",
+                    f"有前驱: {lanelet.get('with_predecessor', 0)}",
+                    f"有后继: {lanelet.get('with_successor', 0)}",
+                    f"左邻接: {lanelet.get('with_left_neighbor', 0)}",
+                    f"右邻接: {lanelet.get('with_right_neighbor', 0)}",
+                    f"任一邻接: {lanelet.get('with_any_neighbor', 0)}",
+                    f"孤立 lanelet: {lanelet.get('isolated_lanelets', 0)}",
+                    f"规则引用数: {lanelet.get('regulatory_ref_count', 0)}",
+                ]
+            )
+        ax_note.axis("off")
+        ax_note.text(
+            0.98,
+            0.5,
+            "\n".join(note_lines),
+            transform=ax_note.transAxes,
+            fontsize=7.8,
+            color="#4f5b4f",
+            va="center",
+            ha="right",
+            bbox={"facecolor": "white", "edgecolor": "#d8ded8", "boxstyle": "round,pad=0.30"},
+        )
+
+
+def _draw_lanelet_panel(ax: plt.Axes, lanelet: dict[str, object]) -> None:
+    lanelet_count = int(lanelet.get("lanelet_count", 0))
+    labels = ["邻接覆盖率", "后继覆盖率"]
+    values = np.array(
+        [
+            float(lanelet.get("neighbor_ratio", 0.0)),
+            float(lanelet.get("successor_ratio", 0.0)),
+        ],
+        dtype=float,
+    )
+    y = np.arange(len(labels))
+    colors = ["#2f7d32" if value >= 0.999 else "#c07a12" for value in values]
+    ax.barh(y, values, color=colors, edgecolor="#4f5b4f", linewidth=0.6)
+    for index, value in enumerate(values):
+        ax.text(min(value + 0.02, 1.02), index, f"{value * 100:.1f}%", va="center", fontsize=9)
+
+    ax.set_title("(c) Lanelet2 量化指标", loc="left", fontsize=11.5, fontweight="bold", pad=6)
+    ax.set_xlim(0, 1.05)
+    ax.set_xlabel("比例")
+    ax.set_yticks(y, labels)
+    ax.invert_yaxis()
+    ax.grid(axis="x", color="#e6ebe6", linewidth=0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    ax.text(
+        0.02,
+        -0.55,
+        f"lanelet 总数: {lanelet_count} | 孤立: {lanelet.get('isolated_lanelets', 0)} | 规则引用数: {lanelet.get('regulatory_ref_count', 0)}",
+        transform=ax.transAxes,
+        fontsize=9,
         color="#4f5b4f",
-        va="center",
-        ha="right",
-        bbox={"facecolor": "white", "edgecolor": "#d8ded8", "boxstyle": "round,pad=0.30"},
+        ha="left",
+    )
+    ax.text(
+        0.02,
+        -0.82,
+        "邻接覆盖率 = 有左右邻接的 lanelet / 总 lanelet",
+        transform=ax.transAxes,
+        fontsize=8,
+        color="#4f5b4f",
+        ha="left",
+    )
+    ax.text(
+        0.02,
+        -1.02,
+        "后继覆盖率 = 有后继的 lanelet / 总 lanelet",
+        transform=ax.transAxes,
+        fontsize=8,
+        color="#4f5b4f",
+        ha="left",
     )
 
 

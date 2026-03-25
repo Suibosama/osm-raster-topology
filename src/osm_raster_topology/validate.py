@@ -59,6 +59,7 @@ def validate_preservation(data: IngestedData, raster: RasterResult) -> dict[str,
         raster.pixel_size,
     )
     turn_restrictions = _summarize_turn_restrictions(data, raster)
+    lanelet_summary = _summarize_lanelet_relations(data)
 
     road_exported_count = len(road_pixel_map)
     water_exported_count = len(water_pixel_map)
@@ -104,6 +105,8 @@ def validate_preservation(data: IngestedData, raster: RasterResult) -> dict[str,
             ]
         ),
         "turn_restriction_coverage_ratio": turn_restrictions["coverage_ratio"],
+        "lanelet_neighbor_ratio": lanelet_summary["neighbor_ratio"],
+        "lanelet_successor_ratio": lanelet_summary["successor_ratio"],
     }
 
     return {
@@ -146,6 +149,7 @@ def validate_preservation(data: IngestedData, raster: RasterResult) -> dict[str,
         },
         "semantics": semantic_coverage,
         "turn_restrictions": turn_restrictions,
+        "lanelet": lanelet_summary,
     }
 
 
@@ -390,6 +394,50 @@ def _summarize_turn_restrictions(data: IngestedData, raster: RasterResult) -> di
         "missing_count": len(missing_relation_ids),
         "coverage_ratio": _safe_ratio(covered_count, len(data.turn_restrictions)),
         "missing_relation_ids": missing_relation_ids,
+    }
+
+
+def _summarize_lanelet_relations(data: IngestedData) -> dict[str, object]:
+    lanelets = data.lanelet_relations
+    if not lanelets:
+        return {
+            "lanelet_count": 0,
+            "with_predecessor": 0,
+            "with_successor": 0,
+            "with_left_neighbor": 0,
+            "with_right_neighbor": 0,
+            "with_any_neighbor": 0,
+            "isolated_lanelets": 0,
+            "regulatory_ref_count": 0,
+            "neighbor_ratio": 0.0,
+            "successor_ratio": 0.0,
+        }
+    with_predecessor = sum(1 for l in lanelets if l.get("predecessor_lanelets"))
+    with_successor = sum(1 for l in lanelets if l.get("successor_lanelets"))
+    with_left = sum(1 for l in lanelets if l.get("left_neighbors"))
+    with_right = sum(1 for l in lanelets if l.get("right_neighbors"))
+    with_any = sum(1 for l in lanelets if l.get("left_neighbors") or l.get("right_neighbors"))
+    isolated = sum(
+        1
+        for l in lanelets
+        if not l.get("predecessor_lanelets")
+        and not l.get("successor_lanelets")
+        and not l.get("left_neighbors")
+        and not l.get("right_neighbors")
+    )
+    regulatory_count = sum(len(l.get("regulatory_element_refs", [])) for l in lanelets)
+    lanelet_count = len(lanelets)
+    return {
+        "lanelet_count": lanelet_count,
+        "with_predecessor": with_predecessor,
+        "with_successor": with_successor,
+        "with_left_neighbor": with_left,
+        "with_right_neighbor": with_right,
+        "with_any_neighbor": with_any,
+        "isolated_lanelets": isolated,
+        "regulatory_ref_count": regulatory_count,
+        "neighbor_ratio": _safe_ratio(with_any, lanelet_count),
+        "successor_ratio": _safe_ratio(with_successor, lanelet_count),
     }
 
 

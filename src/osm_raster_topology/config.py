@@ -22,6 +22,7 @@ class LayerSpec:
 class RunConfig:
     input_path: Path
     outdir: Path
+    ingest_backend: str = "auto"
     target_crs: str = "EPSG:3857"
     pixel_size: float = 1.0
     topology_oversample: int = 4

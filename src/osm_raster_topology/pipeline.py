@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 
 from osm_raster_topology.config import RunConfig
 from osm_raster_topology.ingest import ingest_osm
+from osm_raster_topology.ingest_lanelet2 import ingest_lanelet2_xml
 from osm_raster_topology.layers import default_layers
 from osm_raster_topology.rasterize import (
     ACCESS_CODES,
@@ -18,19 +21,21 @@ from osm_raster_topology.rasterize import (
     SURFACE_CODES,
     rasterize_layers,
 )
-from osm_raster_topology.report import write_validation_report
+from osm_raster_topology.report import write_lanelet2_report, write_validation_report
 from osm_raster_topology.sidecar import build_topology_sidecar
 from osm_raster_topology.validate import validate_preservation
 
 
 REQUIRED_MODULES = ["numpy", "PIL", "networkx"]
 OPTIONAL_GIS_MODULES = ["pyosmium", "shapely", "rasterio"]
+OPTIONAL_LANELET2_MODULES = ["lanelet2"]
 
 
-def build_run_config(input_path: str, outdir: str, pixel_size: float, target_crs: str) -> RunConfig:
+def build_run_config(input_path: str, outdir: str, ingest_backend: str, pixel_size: float, target_crs: str) -> RunConfig:
     return RunConfig(
         input_path=Path(input_path),
         outdir=Path(outdir),
+        ingest_backend=ingest_backend,
         pixel_size=pixel_size,
         target_crs=target_crs,
         layer_specs=default_layers(),
@@ -41,6 +46,7 @@ def check_runtime_dependencies() -> dict[str, dict[str, bool]]:
     return {
         "required": {name: importlib.util.find_spec(name) is not None for name in REQUIRED_MODULES},
         "optional_gis": {name: importlib.util.find_spec(name) is not None for name in OPTIONAL_GIS_MODULES},
+        "optional_lanelet2": {name: importlib.util.find_spec(name) is not None for name in OPTIONAL_LANELET2_MODULES},
     }
 
 
@@ -60,6 +66,7 @@ def write_design_bundle(config: RunConfig) -> dict[str, Path]:
     paths = ensure_output_dirs(config)
     manifest = {
         "input_path": str(config.input_path),
+        "ingest_backend": config.ingest_backend,
         "target_crs": config.target_crs,
         "pixel_size": config.pixel_size,
         "topology_oversample": config.topology_oversample,
@@ -89,15 +96,28 @@ def write_design_bundle(config: RunConfig) -> dict[str, Path]:
     return paths
 
 
-def run_pipeline(config: RunConfig) -> dict[str, object]:
+def run_pipeline(config: RunConfig, progress_cb: Callable[[str, int], None] | None = None) -> dict[str, object]:
     paths = ensure_output_dirs(config)
-    data = ingest_osm(config)
+    if progress_cb:
+        progress_cb("ingest", 5)
+    resolved_backend = _resolve_ingest_backend(config)
+    if resolved_backend == "lanelet2_xml":
+        data = ingest_lanelet2_xml(config)
+    else:
+        data = ingest_osm(config)
+    if progress_cb:
+        progress_cb("rasterize", 35)
     raster = rasterize_layers(data, config, paths["raster"])
+    if progress_cb:
+        progress_cb("sidecar", 60)
     sidecar = build_topology_sidecar(data)
+    if progress_cb:
+        progress_cb("validate", 75)
     validation = validate_preservation(data, raster)
     bundle = {
         "metadata": {
             "input_path": str(config.input_path),
+            "ingest_backend": data.ingest_backend,
             "target_crs": config.target_crs,
             "pixel_size": config.pixel_size,
             "topology_oversample": config.topology_oversample,
@@ -134,7 +154,14 @@ def run_pipeline(config: RunConfig) -> dict[str, object]:
     bundle_path = paths["root"] / "map_bundle.json"
     _write_json(bundle_path, bundle)
     validation_report_path = paths["root"] / "validation_report.png"
-    write_validation_report(bundle, validation_report_path)
+    if progress_cb:
+        progress_cb("report", 90)
+    if data.ingest_backend == "lanelet2_xml":
+        write_lanelet2_report(bundle, validation_report_path)
+    else:
+        write_validation_report(bundle, validation_report_path)
+    if progress_cb:
+        progress_cb("done", 100)
     legacy_html = paths["root"] / "validation_report.html"
     if legacy_html.exists():
         legacy_html.unlink()
@@ -144,6 +171,7 @@ def run_pipeline(config: RunConfig) -> dict[str, object]:
     return {
         "status": "ok",
         "outdir": str(paths["root"]),
+        "ingest_backend": data.ingest_backend,
         "bundle": str(bundle_path),
         "validation_report": str(validation_report_path),
         "preview": raster.preview_path,
@@ -153,6 +181,28 @@ def run_pipeline(config: RunConfig) -> dict[str, object]:
         "raster_metrics": raster.metrics,
         "validation": validation["checks"],
     }
+
+
+def _resolve_ingest_backend(config: RunConfig) -> str:
+    backend = config.ingest_backend
+    if backend in {"osm_xml", "lanelet2_xml"}:
+        return backend
+    if backend != "auto":
+        raise ValueError(f"Unsupported ingest backend: {backend}")
+    return "lanelet2_xml" if _looks_like_lanelet2_osm(config.input_path) else "osm_xml"
+
+
+def _looks_like_lanelet2_osm(input_path: Path) -> bool:
+    try:
+        root = ET.parse(input_path).getroot()
+    except ET.ParseError:
+        return False
+    for relation in root.findall("relation"):
+        tags = {tag.attrib.get("k", ""): tag.attrib.get("v", "") for tag in relation.findall("tag")}
+        relation_type = tags.get("type", "")
+        if relation_type in {"lanelet", "regulatory_element"}:
+            return True
+    return False
 
 
 def _semantic_legends() -> dict[str, dict[str, int]]:

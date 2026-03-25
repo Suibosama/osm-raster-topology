@@ -18,6 +18,12 @@ def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--input", required=True, help="Input .osm XML file path.")
     common.add_argument("--outdir", required=True, help="Output directory.")
+    common.add_argument(
+        "--ingest-backend",
+        default="auto",
+        choices=["auto", "osm_xml", "lanelet2_xml"],
+        help="Ingest backend selection. 'auto' detects lanelet2 relations in OSM XML.",
+    )
     common.add_argument("--pixel-size", type=float, default=1.0, help="Pixel size in projected meters.")
     common.add_argument("--target-crs", default="EPSG:3857", help="Target CRS. The current runner supports EPSG:3857 only.")
 
@@ -39,6 +45,7 @@ def handle_design(args: argparse.Namespace) -> int:
     config = build_run_config(
         input_path=args.input,
         outdir=args.outdir,
+        ingest_backend=args.ingest_backend,
         pixel_size=args.pixel_size,
         target_crs=args.target_crs,
     )
@@ -51,6 +58,7 @@ def handle_check(args: argparse.Namespace) -> int:
     config = build_run_config(
         input_path=args.input,
         outdir=args.outdir,
+        ingest_backend=args.ingest_backend,
         pixel_size=args.pixel_size,
         target_crs=args.target_crs,
     )
@@ -61,6 +69,7 @@ def handle_check(args: argparse.Namespace) -> int:
         "dependency_status": check_runtime_dependencies(),
         "layer_count": len(config.layer_specs),
         "target_crs": config.target_crs,
+        "ingest_backend": config.ingest_backend,
         "pixel_size": config.pixel_size,
         "topology_oversample": config.topology_oversample,
         "object_stack_depth": config.object_stack_depth,
@@ -73,6 +82,7 @@ def handle_run(args: argparse.Namespace) -> int:
     config = build_run_config(
         input_path=args.input,
         outdir=args.outdir,
+        ingest_backend=args.ingest_backend,
         pixel_size=args.pixel_size,
         target_crs=args.target_crs,
     )
