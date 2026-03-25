@@ -55,6 +55,8 @@ pip install -e .[gui]
 powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
+GUI 名称已更新为“矢量地图转栅格地图工具”。若处理 Lanelet2，请在 GUI 中将 `Ingest 后端` 选择为 `lanelet2_xml`，会生成 Lanelet2 专用量化报告。
+
 ### 2. 命令行 `run`
 
 ```powershell
@@ -101,6 +103,12 @@ python -m osm_raster_topology check --input your_map.osm --outdir output_dir
 
 ```bash
 python -m osm_raster_topology run --input your_map.osm --outdir output_dir --pixel-size 1.0
+```
+
+Optional ingest backend override:
+
+```bash
+python -m osm_raster_topology run --input your_map.osm --outdir output_dir --pixel-size 1.0 --ingest-backend lanelet2_xml
 ```
 
 ## 输出文件说明

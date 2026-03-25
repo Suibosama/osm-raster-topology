@@ -27,14 +27,15 @@ def launch_gui() -> int:
 class RasterGui(TkBase):
     def __init__(self) -> None:
         super().__init__()
-        self.title("OSM 转栅格地图")
+        self.title("矢量地图转栅格地图工具")
         self.geometry("860x620")
         self.minsize(760, 560)
 
         self.input_var = tk.StringVar()
         self.output_var = tk.StringVar()
         self.pixel_size_var = tk.StringVar(value="1.0")
-        self.status_var = tk.StringVar(value="请选择 OSM 文件和输出目录。")
+        self.ingest_backend_var = tk.StringVar(value="auto")
+        self.status_var = tk.StringVar(value="请选择矢量地图文件和输出目录。")
 
         self._build_widgets()
         self._enable_optional_drag_drop()
@@ -45,17 +46,17 @@ class RasterGui(TkBase):
         root.columnconfigure(0, weight=1)
         root.rowconfigure(6, weight=1)
 
-        ttk.Label(root, text="OSM 转栅格地图端到端工具", font=("", 18, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(root, text="矢量地图转栅格地图工具", font=("", 18, "bold")).grid(row=0, column=0, sticky="w")
         ttk.Label(
             root,
-            text="选择或拖入 .osm 文件，设置输出目录后自动生成地图包、预览图和量化验证图。",
+            text="选择或拖入 .osm 矢量地图文件，生成栅格地图与量化报告。",
         ).grid(row=1, column=0, sticky="w", pady=(6, 16))
 
         file_card = ttk.LabelFrame(root, text="1. 输入文件", padding=14)
         file_card.grid(row=2, column=0, sticky="nsew")
         file_card.columnconfigure(0, weight=1)
         ttk.Entry(file_card, textvariable=self.input_var).grid(row=0, column=0, sticky="ew")
-        ttk.Button(file_card, text="选择 OSM", command=self._pick_input).grid(row=0, column=1, padx=(10, 0))
+        ttk.Button(file_card, text="选择地图", command=self._pick_input).grid(row=0, column=1, padx=(10, 0))
         self.drop_hint = ttk.Label(file_card, text="", foreground="#5f6b5f")
         self.drop_hint.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
@@ -69,6 +70,16 @@ class RasterGui(TkBase):
         cfg_card.grid(row=4, column=0, sticky="nsew", pady=(14, 0))
         ttk.Label(cfg_card, text="像素分辨率（米）").grid(row=0, column=0, sticky="w")
         ttk.Entry(cfg_card, textvariable=self.pixel_size_var, width=12).grid(row=0, column=1, sticky="w", padx=(10, 0))
+        ttk.Label(cfg_card, text="Ingest 后端").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        backend = ttk.Combobox(
+            cfg_card,
+            textvariable=self.ingest_backend_var,
+            values=["auto", "osm_xml", "lanelet2_xml"],
+            state="readonly",
+            width=14,
+        )
+        backend.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        ttk.Label(cfg_card, text="Lanelet2 选 lanelet2_xml，可输出专用量化报告").grid(row=1, column=2, sticky="w", padx=(20, 0), pady=(10, 0))
         ttk.Label(cfg_card, text="当前坐标系固定为 EPSG:3857").grid(row=0, column=2, sticky="w", padx=(20, 0))
 
         action_bar = ttk.Frame(root)
@@ -81,7 +92,7 @@ class RasterGui(TkBase):
         status_card.columnconfigure(0, weight=1)
         status_card.rowconfigure(2, weight=1)
         ttk.Label(status_card, textvariable=self.status_var, foreground="#2c3a2c").grid(row=0, column=0, sticky="w")
-        self.progress = ttk.Progressbar(status_card, mode="indeterminate")
+        self.progress = ttk.Progressbar(status_card, mode="determinate", maximum=100)
         self.progress.grid(row=1, column=0, sticky="ew", pady=(12, 10))
 
         self.log = tk.Text(status_card, height=14, wrap="word")
@@ -94,11 +105,11 @@ class RasterGui(TkBase):
 
     def _enable_optional_drag_drop(self) -> None:
         if DND_FILES is None:
-            self.drop_hint.configure(text="当前未安装 tkinterdnd2，拖拽不可用，请点击“选择 OSM”。")
+            self.drop_hint.configure(text="当前未安装 tkinterdnd2，拖拽不可用，请点击“选择地图”。")
             return
         self.drop_target_register(DND_FILES)
         self.dnd_bind("<<Drop>>", self._handle_drop)
-        self.drop_hint.configure(text="可直接将 .osm 文件拖入窗口。")
+        self.drop_hint.configure(text="可直接将 .osm 矢量地图文件拖入窗口。")
 
     def _handle_drop(self, event: tk.Event) -> None:
         raw = str(event.data).strip()
@@ -112,7 +123,7 @@ class RasterGui(TkBase):
 
     def _pick_input(self) -> None:
         path = filedialog.askopenfilename(
-            title="选择 OSM 文件",
+            title="选择矢量地图文件",
             filetypes=[("OSM XML", "*.osm"), ("所有文件", "*.*")],
         )
         if path:
@@ -136,10 +147,10 @@ class RasterGui(TkBase):
             return
 
         if not input_path.exists():
-            messagebox.showerror("输入不存在", "请选择有效的 .osm 文件。")
+            messagebox.showerror("输入不存在", "请选择有效的 .osm 矢量地图文件。")
             return
         if input_path.suffix.lower() != ".osm":
-            messagebox.showerror("文件类型错误", "当前只支持 .osm 文件。")
+            messagebox.showerror("文件类型错误", "当前只支持 .osm 矢量地图文件。")
             return
         if pixel_size <= 0:
             messagebox.showerror("参数错误", "像素分辨率必须大于 0。")
@@ -150,7 +161,8 @@ class RasterGui(TkBase):
         self._append_log(f"输入文件: {input_path}")
         self._append_log(f"输出目录: {output_path}")
         self._append_log(f"像素分辨率: {pixel_size} m")
-        self.progress.start(10)
+        self._append_log(f"Ingest 后端: {self.ingest_backend_var.get().strip()}")
+        self.progress["value"] = 0
 
         worker = threading.Thread(
             target=self._run_pipeline_thread,
@@ -161,13 +173,17 @@ class RasterGui(TkBase):
 
     def _run_pipeline_thread(self, input_path: Path, output_path: Path, pixel_size: float) -> None:
         try:
+            def progress_cb(stage: str, value: int) -> None:
+                self.after(0, lambda: self._set_progress(stage, value))
+
             config = build_run_config(
                 input_path=str(input_path),
                 outdir=str(output_path),
+                ingest_backend=self.ingest_backend_var.get().strip() or "auto",
                 pixel_size=pixel_size,
                 target_crs="EPSG:3857",
             )
-            result = run_pipeline(config)
+            result = run_pipeline(config, progress_cb=progress_cb)
             self.after(0, lambda: self._on_success(result))
         except Exception as exc:  # pragma: no cover
             self.after(0, lambda: self._on_error(exc))
@@ -175,6 +191,7 @@ class RasterGui(TkBase):
     def _on_success(self, result: dict[str, object]) -> None:
         self.progress.stop()
         self.status_var.set("转换完成。")
+        self.progress["value"] = 100
         self._append_log(json.dumps(result, indent=2, ensure_ascii=False))
         messagebox.showinfo(
             "转换完成",
@@ -186,8 +203,22 @@ class RasterGui(TkBase):
     def _on_error(self, exc: Exception) -> None:
         self.progress.stop()
         self.status_var.set("转换失败。")
+        self.progress["value"] = 0
         self._append_log(f"转换失败: {exc}")
         messagebox.showerror("转换失败", str(exc))
+
+    def _set_progress(self, stage: str, value: int) -> None:
+        labels = {
+            "ingest": "读取与解析中…",
+            "rasterize": "栅格化处理中…",
+            "sidecar": "拓扑与侧车生成中…",
+            "validate": "量化验证中…",
+            "report": "报告生成中…",
+            "done": "转换完成。",
+        }
+        self.progress["value"] = value
+        if stage in labels:
+            self.status_var.set(labels[stage])
 
     def _append_log(self, text: str) -> None:
         self.log.configure(state="normal")

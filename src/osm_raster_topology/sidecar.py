@@ -85,5 +85,6 @@ def build_topology_sidecar(data: IngestedData) -> dict[str, object]:
         "polygon_holes": polygon_holes,
         "overlap_groups": overlap_groups,
         "turn_restrictions": turn_restrictions,
+        "lanelet_relations": data.lanelet_relations,
         "notes": data.notes,
     }
