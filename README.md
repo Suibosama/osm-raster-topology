@@ -5,9 +5,12 @@
 ## 功能概览
 
 - 输入：`.osm` XML（标准 OSM 与 Lanelet2 OSM）
+- 输入：`.xodr` OpenDRIVE（先转换为 OSM 再进入统一管线）
 - 输出：
   - `map_bundle.json`
   - `raster/preview.png`
+  - `raster/layers.npz`（栅格数组）
+  - `raster/layers.tif`（可选：需安装 rasterio）
   - `validation_report.png`
   - `topology/` 与 `validation/`
 - 量化报告：
@@ -73,6 +76,15 @@ python -m osm_raster_topology check --input your_map.osm --outdir output_dir
 python -m osm_raster_topology run --input your_map.osm --outdir output_dir --pixel-size 1.0
 ```
 
+### OpenDRIVE (.xodr)
+
+```bash
+python -m osm_raster_topology run \
+  --input your_map.xodr \
+  --outdir output_dir \
+  --pixel-size 1.0
+```
+
 ### 强制 Lanelet2 模式
 
 ```bash
@@ -125,4 +137,5 @@ python -m osm_raster_topology run \
 ## 限制
 
 - 目前仅支持 `.osm` XML（不支持 `.pbf`）
+- OpenDRIVE 将先转换为 OSM，输出道路中心线 + 车道线 + 车道面
 - `target_crs` 固定为 `EPSG:3857`

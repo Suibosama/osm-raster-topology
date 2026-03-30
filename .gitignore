@@ -1,3 +1,12 @@
 build/
 __pycache__/
 *.pyc
+*.egg-info/
+.venv/
+data/
+out_town01/
+out_town01_v2/
+out_town01_v3/
+out_town01_v4/
+tongji_output/
+素材/

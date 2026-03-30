@@ -49,7 +49,7 @@ class RasterGui(TkBase):
         ttk.Label(root, text="矢量地图转栅格地图工具", font=("", 18, "bold")).grid(row=0, column=0, sticky="w")
         ttk.Label(
             root,
-            text="选择或拖入 .osm 矢量地图文件，生成栅格地图与量化报告。",
+            text="选择或拖入 .osm/.xodr 矢量地图文件，生成栅格地图与量化报告。",
         ).grid(row=1, column=0, sticky="w", pady=(6, 16))
 
         file_card = ttk.LabelFrame(root, text="1. 输入文件", padding=14)
@@ -74,7 +74,7 @@ class RasterGui(TkBase):
         backend = ttk.Combobox(
             cfg_card,
             textvariable=self.ingest_backend_var,
-            values=["auto", "osm_xml", "lanelet2_xml"],
+            values=["auto", "osm_xml", "lanelet2_xml", "opendrive_xodr"],
             state="readonly",
             width=14,
         )
@@ -109,13 +109,13 @@ class RasterGui(TkBase):
             return
         self.drop_target_register(DND_FILES)
         self.dnd_bind("<<Drop>>", self._handle_drop)
-        self.drop_hint.configure(text="可直接将 .osm 矢量地图文件拖入窗口。")
+        self.drop_hint.configure(text="可直接将 .osm/.xodr 矢量地图文件拖入窗口。")
 
     def _handle_drop(self, event: tk.Event) -> None:
         raw = str(event.data).strip()
         path = _normalize_drop_path(raw)
-        if path.suffix.lower() != ".osm":
-            messagebox.showwarning("文件类型不支持", "请拖入 .osm 文件。")
+        if path.suffix.lower() not in {".osm", ".xodr"}:
+            messagebox.showwarning("文件类型不支持", "请拖入 .osm/.xodr 文件。")
             return
         self.input_var.set(str(path))
         if not self.output_var.get():
@@ -124,7 +124,7 @@ class RasterGui(TkBase):
     def _pick_input(self) -> None:
         path = filedialog.askopenfilename(
             title="选择矢量地图文件",
-            filetypes=[("OSM XML", "*.osm"), ("所有文件", "*.*")],
+            filetypes=[("OSM/OpenDRIVE", "*.osm;*.xodr"), ("所有文件", "*.*")],
         )
         if path:
             self.input_var.set(path)
@@ -147,10 +147,10 @@ class RasterGui(TkBase):
             return
 
         if not input_path.exists():
-            messagebox.showerror("输入不存在", "请选择有效的 .osm 矢量地图文件。")
+            messagebox.showerror("输入不存在", "请选择有效的 .osm/.xodr 矢量地图文件。")
             return
-        if input_path.suffix.lower() != ".osm":
-            messagebox.showerror("文件类型错误", "当前只支持 .osm 矢量地图文件。")
+        if input_path.suffix.lower() not in {".osm", ".xodr"}:
+            messagebox.showerror("文件类型错误", "当前只支持 .osm/.xodr 矢量地图文件。")
             return
         if pixel_size <= 0:
             messagebox.showerror("参数错误", "像素分辨率必须大于 0。")

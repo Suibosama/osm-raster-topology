@@ -113,4 +113,22 @@ def default_layers() -> list[LayerSpec]:
             topology_role="traffic_rule",
             tags={"restriction": ["*"]},
         ),
+        LayerSpec(
+            name="lane_markings",
+            geometry_kind="line",
+            description="OpenDRIVE lane boundary markings (converted from .xodr).",
+            band_index=13,
+            burn_strategy="line_mask",
+            topology_role="lane_marking",
+            tags={"xodr:feature": ["lane_marking"]},
+        ),
+        LayerSpec(
+            name="lane_area",
+            geometry_kind="polygon",
+            description="OpenDRIVE lane area polygons (converted from .xodr).",
+            band_index=14,
+            burn_strategy="polygon_fill",
+            topology_role="lane_area",
+            tags={"xodr:feature": ["lane_area"]},
+        ),
     ]

@@ -16,13 +16,13 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--input", required=True, help="Input .osm XML file path.")
+    common.add_argument("--input", required=True, help="Input .osm or .xodr file path.")
     common.add_argument("--outdir", required=True, help="Output directory.")
     common.add_argument(
         "--ingest-backend",
         default="auto",
-        choices=["auto", "osm_xml", "lanelet2_xml"],
-        help="Ingest backend selection. 'auto' detects lanelet2 relations in OSM XML.",
+        choices=["auto", "osm_xml", "lanelet2_xml", "opendrive_xodr"],
+        help="Ingest backend selection. 'auto' detects lanelet2 relations in OSM XML or .xodr input.",
     )
     common.add_argument("--pixel-size", type=float, default=1.0, help="Pixel size in projected meters.")
     common.add_argument("--target-crs", default="EPSG:3857", help="Target CRS. The current runner supports EPSG:3857 only.")
@@ -65,7 +65,7 @@ def handle_check(args: argparse.Namespace) -> int:
     result = {
         "input_exists": Path(config.input_path).exists(),
         "input_suffix": config.input_path.suffix.lower(),
-        "supports_direct_run": config.input_path.suffix.lower() == ".osm",
+        "supports_direct_run": config.input_path.suffix.lower() in {".osm", ".xodr"},
         "dependency_status": check_runtime_dependencies(),
         "layer_count": len(config.layer_specs),
         "target_crs": config.target_crs,

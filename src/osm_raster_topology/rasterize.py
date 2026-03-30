@@ -79,6 +79,7 @@ def rasterize_layers(data: IngestedData, config: RunConfig, raster_dir: Path) ->
         "building_boundary": Image.new("L", (width, height), 0),
         "sports_fill": Image.new("L", (width, height), 0),
         "sports_boundary": Image.new("L", (width, height), 0),
+        "lane_area": Image.new("L", (width, height), 0),
         "node_mask": Image.new("L", (width, height), 0),
         "hole_mask": Image.new("L", (width, height), 0),
         "turn_restriction_via_mask": Image.new("L", (width, height), 0),
@@ -91,6 +92,7 @@ def rasterize_layers(data: IngestedData, config: RunConfig, raster_dir: Path) ->
 
     road_super = np.zeros((super_height, super_width), dtype=np.uint8)
     water_super = np.zeros((super_height, super_width), dtype=np.uint8)
+    lane_marking_super = np.zeros((super_height, super_width), dtype=np.uint8)
     crossing_super = np.zeros((super_height, super_width), dtype=np.uint8)
     node_anchor_super = np.zeros((super_height, super_width), dtype=np.uint8)
     road_direction_super = np.zeros((super_height, super_width), dtype=np.uint8)
@@ -98,10 +100,13 @@ def rasterize_layers(data: IngestedData, config: RunConfig, raster_dir: Path) ->
 
     road_pixel_objects: dict[tuple[int, int], set[int]] = defaultdict(set)
     water_pixel_objects: dict[tuple[int, int], set[int]] = defaultdict(set)
+    lane_marking_pixel_objects: dict[tuple[int, int], set[int]] = defaultdict(set)
     road_feature_pixels: dict[int, set[tuple[int, int]]] = defaultdict(set)
     water_feature_pixels: dict[int, set[tuple[int, int]]] = defaultdict(set)
+    lane_marking_feature_pixels: dict[int, set[tuple[int, int]]] = defaultdict(set)
     road_feature_clipped: set[int] = set()
     water_feature_clipped: set[int] = set()
+    lane_marking_feature_clipped: set[int] = set()
 
     road_priority = np.full((height, width), -1, dtype=np.int16)
     arrays: dict[str, np.ndarray] = {
@@ -133,6 +138,8 @@ def rasterize_layers(data: IngestedData, config: RunConfig, raster_dir: Path) ->
             drawers["sports_fill"].polygon(outer, fill=1)
             _draw_polygon_boundary(drawers["sports_boundary"], outer)
             _fill_sports_semantics(arrays, polygon, outer)
+        if polygon.tags.get("xodr:feature") == "lane_area":
+            drawers["lane_area"].polygon(outer, fill=1)
         for hole in polygon.holes:
             hole_points = [_to_pixel(point, data.bounds_xy, config.pixel_size) for point in hole]
             if len(hole_points) < 3:
@@ -148,16 +155,33 @@ def rasterize_layers(data: IngestedData, config: RunConfig, raster_dir: Path) ->
                 drawers["sports_fill"].polygon(hole_points, fill=0)
                 drawers["sports_boundary"].polygon(hole_points, outline=1)
                 _clear_sports_semantics(arrays, hole_points)
+            if polygon.tags.get("xodr:feature") == "lane_area":
+                drawers["lane_area"].polygon(hole_points, fill=0)
 
     for feature in data.line_features:
         points_super = [_to_super_pixel(point, data.bounds_xy, config.pixel_size, oversample) for point in feature.points]
         if len(points_super) < 2:
             continue
-        occupancy = road_super if feature.category == "road" else water_super
-        direction = road_direction_super if feature.category == "road" else water_direction_super
-        pixel_objects = road_pixel_objects if feature.category == "road" else water_pixel_objects
-        feature_pixels = road_feature_pixels if feature.category == "road" else water_feature_pixels
-        feature_clipped = road_feature_clipped if feature.category == "road" else water_feature_clipped
+        if feature.category == "road":
+            occupancy = road_super
+            direction = road_direction_super
+            pixel_objects = road_pixel_objects
+            feature_pixels = road_feature_pixels
+            feature_clipped = road_feature_clipped
+        elif feature.category == "water":
+            occupancy = water_super
+            direction = water_direction_super
+            pixel_objects = water_pixel_objects
+            feature_pixels = water_feature_pixels
+            feature_clipped = water_feature_clipped
+        elif feature.category == "lane_marking":
+            occupancy = lane_marking_super
+            direction = None
+            pixel_objects = lane_marking_pixel_objects
+            feature_pixels = lane_marking_feature_pixels
+            feature_clipped = lane_marking_feature_clipped
+        else:
+            continue
 
         for start, end in zip(points_super[:-1], points_super[1:]):
             path = _iter_supercover_pixels(start, end)
@@ -176,7 +200,7 @@ def rasterize_layers(data: IngestedData, config: RunConfig, raster_dir: Path) ->
                     _write_road_semantics(arrays, road_priority, base_y, base_x, feature.tags)
                 if _is_z_aware(feature.tags):
                     crossing_super[y, x] = 1
-                if index < len(path) - 1:
+                if direction is not None and index < len(path) - 1:
                     nx, ny = path[index + 1]
                     dx = _sign(nx - x)
                     dy = _sign(ny - y)
@@ -211,8 +235,10 @@ def rasterize_layers(data: IngestedData, config: RunConfig, raster_dir: Path) ->
     arrays["node_anchor_super"] = node_anchor_super
     arrays["road_direction_bits_super"] = road_direction_super
     arrays["water_direction_bits_super"] = water_direction_super
+    arrays["lane_marking_super"] = lane_marking_super
     arrays["road_edges"] = _downsample_max(road_super, oversample)
     arrays["water_lines"] = _downsample_max(water_super, oversample)
+    arrays["lane_markings"] = _downsample_max(lane_marking_super, oversample)
     arrays["crossing_structure"] = _downsample_max(crossing_super, oversample)
     arrays["road_direction_bits"] = _downsample_or(road_direction_super, oversample)
     arrays["water_direction_bits"] = _downsample_or(water_direction_super, oversample)
@@ -224,12 +250,19 @@ def rasterize_layers(data: IngestedData, config: RunConfig, raster_dir: Path) ->
 
     road_stack_payload, road_stack_summary = _build_object_stack_payload(road_pixel_objects, config.object_stack_depth)
     water_stack_payload, water_stack_summary = _build_object_stack_payload(water_pixel_objects, config.object_stack_depth)
+    lane_stack_payload, lane_stack_summary = _build_object_stack_payload(lane_marking_pixel_objects, config.object_stack_depth)
     files: dict[str, str] = {}
 
     preview = _build_preview(arrays)
     preview_path = raster_dir / "preview.png"
     preview.save(preview_path)
     files["preview_png"] = str(preview_path)
+    npz_path = raster_dir / "layers.npz"
+    _write_npz(npz_path, arrays)
+    files["layers_npz"] = str(npz_path)
+    geotiff_path = _write_geotiff(raster_dir, arrays, data.bounds_xy, config.pixel_size)
+    if geotiff_path is not None:
+        files["layers_geotiff"] = str(geotiff_path)
 
     band_sums = {name: int((array > 0).sum()) for name, array in arrays.items()}
     metrics = {
@@ -239,11 +272,14 @@ def rasterize_layers(data: IngestedData, config: RunConfig, raster_dir: Path) ->
         "water_multi_object_pixels": int(sum(1 for ids in water_pixel_objects.values() if len(ids) > 1)),
         "road_object_overflow_pixels": int(road_stack_summary["overflow_pixel_count"]),
         "water_object_overflow_pixels": int(water_stack_summary["overflow_pixel_count"]),
+        "lane_marking_object_overflow_pixels": int(lane_stack_summary["overflow_pixel_count"]),
         "building_boundary_pixels": int((arrays["building_boundary"] > 0).sum()),
         "building_fill_pixels": int((arrays["building_fill"] > 0).sum()),
         "sports_boundary_pixels": int((arrays["sports_boundary"] > 0).sum()),
         "sports_fill_pixels": int((arrays["sports_fill"] > 0).sum()),
         "semantic_road_pixels": int((arrays["highway_class"] > 0).sum()),
+        "lane_marking_pixels": int((arrays["lane_markings"] > 0).sum()),
+        "lane_area_pixels": int((arrays["lane_area"] > 0).sum()),
         "turn_restriction_pixels": int((arrays["turn_restriction_via_mask"] > 0).sum()),
         "topology_oversample": oversample,
     }
@@ -258,6 +294,7 @@ def rasterize_layers(data: IngestedData, config: RunConfig, raster_dir: Path) ->
         object_stacks={
             "road": road_stack_payload,
             "water": water_stack_payload,
+            "lane_marking": lane_stack_payload,
         },
         files=files,
         band_sums=band_sums,
@@ -532,10 +569,54 @@ def _build_preview(arrays: dict[str, np.ndarray]) -> Image.Image:
     rgb[arrays["building_boundary"] > 0] = np.array([95, 95, 95], dtype=np.uint8)
     rgb[arrays["sports_fill"] > 0] = np.array([149, 191, 95], dtype=np.uint8)
     rgb[arrays["sports_boundary"] > 0] = np.array([71, 122, 34], dtype=np.uint8)
+    rgb[arrays["lane_area"] > 0] = np.array([210, 210, 250], dtype=np.uint8)
     rgb[arrays["hole_mask"] > 0] = np.array([250, 250, 250], dtype=np.uint8)
     rgb[arrays["water_lines"] > 0] = np.array([70, 140, 220], dtype=np.uint8)
     rgb[arrays["road_edges"] > 0] = np.array([233, 148, 52], dtype=np.uint8)
+    rgb[arrays["lane_markings"] > 0] = np.array([245, 205, 84], dtype=np.uint8)
     rgb[arrays["crossing_structure"] > 0] = np.array([178, 55, 34], dtype=np.uint8)
     rgb[arrays["turn_restriction_via_mask"] > 0] = np.array([156, 33, 33], dtype=np.uint8)
     rgb[arrays["node_mask"] > 0] = np.array([20, 20, 20], dtype=np.uint8)
     return Image.fromarray(rgb, mode="RGB")
+
+
+def _write_npz(path: Path, arrays: dict[str, np.ndarray]) -> None:
+    np.savez_compressed(path, **arrays)
+
+
+def _write_geotiff(
+    raster_dir: Path,
+    arrays: dict[str, np.ndarray],
+    bounds_xy: tuple[float, float, float, float],
+    pixel_size: float,
+) -> Path | None:
+    try:
+        import rasterio
+        from rasterio.transform import from_origin
+    except Exception:
+        return None
+
+    height, width = arrays["road_edges"].shape
+    band_items = [(name, array) for name, array in sorted(arrays.items()) if array.shape == (height, width)]
+    if not band_items:
+        return None
+    transform = from_origin(bounds_xy[0], bounds_xy[3], pixel_size, pixel_size)
+    path = raster_dir / "layers.tif"
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=height,
+        width=width,
+        count=len(band_items),
+        dtype=band_items[0][1].dtype,
+        crs="EPSG:3857",
+        transform=transform,
+        nodata=0,
+        compress="deflate",
+        tiled=True,
+    ) as dst:
+        for index, (name, array) in enumerate(band_items, start=1):
+            dst.write(array, index)
+            dst.set_band_description(index, name)
+    return path

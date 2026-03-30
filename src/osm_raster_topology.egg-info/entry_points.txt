@@ -1,3 +1,0 @@
-[console_scripts]
-osm-topology = osm_raster_topology.cli:main
-osm-topology-ui = osm_raster_topology.gui:launch_gui
