@@ -21,6 +21,7 @@ runtime = [
   "shapely>=2.0",
   "rasterio>=1.3",
   "pyosmium>=4.0",
+  "pyproj>=3.6",
 ]
 gui = [
   "tkinterdnd2>=0.4.2",

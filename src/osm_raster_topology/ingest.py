@@ -25,6 +25,7 @@ AREA_TAG_KEYS = {
     "water",
     "aeroway",
     "boundary",
+    "xodr:feature",
 }
 LINE_TAG_KEYS = {"highway", "waterway", "railway"}
 
@@ -284,6 +285,8 @@ def _is_polygon_candidate(tags: dict[str, str], node_refs: list[int]) -> bool:
         return False
     if tags.get("area") == "no":
         return False
+    if tags.get("xodr:feature") == "lane_area":
+        return True
     if tags.get("area") == "yes":
         return True
     if any(key in tags for key in AREA_TAG_KEYS):
@@ -294,6 +297,8 @@ def _is_polygon_candidate(tags: dict[str, str], node_refs: list[int]) -> bool:
 
 
 def _classify_line(tags: dict[str, str]) -> str | None:
+    if tags.get("xodr:feature") == "lane_marking":
+        return "lane_marking"
     if "highway" in tags:
         return "road"
     if "waterway" in tags:

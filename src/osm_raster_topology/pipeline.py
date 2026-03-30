@@ -4,6 +4,7 @@ import importlib.util
 import json
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,7 @@ from osm_raster_topology.config import RunConfig
 from osm_raster_topology.ingest import ingest_osm
 from osm_raster_topology.ingest_lanelet2 import ingest_lanelet2_xml
 from osm_raster_topology.layers import default_layers
+from osm_raster_topology.opendrive_convert import convert_xodr_to_osm
 from osm_raster_topology.rasterize import (
     ACCESS_CODES,
     BUILDING_CLASS_CODES,
@@ -21,13 +23,13 @@ from osm_raster_topology.rasterize import (
     SURFACE_CODES,
     rasterize_layers,
 )
-from osm_raster_topology.report import write_lanelet2_report, write_validation_report
+from osm_raster_topology.report import write_lanelet2_report, write_opendrive_report, write_validation_report
 from osm_raster_topology.sidecar import build_topology_sidecar
 from osm_raster_topology.validate import validate_preservation
 
 
 REQUIRED_MODULES = ["numpy", "PIL", "networkx"]
-OPTIONAL_GIS_MODULES = ["pyosmium", "shapely", "rasterio"]
+OPTIONAL_GIS_MODULES = ["pyosmium", "shapely", "rasterio", "pyproj"]
 OPTIONAL_LANELET2_MODULES = ["lanelet2"]
 
 
@@ -84,6 +86,7 @@ def write_design_bundle(config: RunConfig) -> dict[str, Path]:
         "runtime_dependencies": check_runtime_dependencies(),
         "notes": [
             "Current implementation exports topology-aware PNG, NPZ, and JSON from .osm XML.",
+            "OpenDRIVE (.xodr) inputs are converted to OSM before processing.",
             "Semantic road and building layers are emitted alongside topology layers and sidecars.",
         ],
     }
@@ -101,7 +104,15 @@ def run_pipeline(config: RunConfig, progress_cb: Callable[[str, int], None] | No
     if progress_cb:
         progress_cb("ingest", 5)
     resolved_backend = _resolve_ingest_backend(config)
-    if resolved_backend == "lanelet2_xml":
+    conversion_report = None
+    if resolved_backend == "opendrive_xodr":
+        conversion = convert_xodr_to_osm(config)
+        conversion_report = str(conversion.report_path)
+        converted_config = replace(config, input_path=conversion.osm_path, ingest_backend="osm_xml")
+        data = ingest_osm(converted_config)
+        data.notes.append(f"Converted from OpenDRIVE: {conversion.osm_path}")
+        data.notes.append(f"Conversion report: {conversion.report_path}")
+    elif resolved_backend == "lanelet2_xml":
         data = ingest_lanelet2_xml(config)
     else:
         data = ingest_osm(config)
@@ -156,7 +167,9 @@ def run_pipeline(config: RunConfig, progress_cb: Callable[[str, int], None] | No
     validation_report_path = paths["root"] / "validation_report.png"
     if progress_cb:
         progress_cb("report", 90)
-    if data.ingest_backend == "lanelet2_xml":
+    if conversion_report:
+        write_opendrive_report(bundle, validation_report_path)
+    elif data.ingest_backend == "lanelet2_xml":
         write_lanelet2_report(bundle, validation_report_path)
     else:
         write_validation_report(bundle, validation_report_path)
@@ -180,15 +193,24 @@ def run_pipeline(config: RunConfig, progress_cb: Callable[[str, int], None] | No
         "feature_stats": data.stats,
         "raster_metrics": raster.metrics,
         "validation": validation["checks"],
+        "conversion_report": conversion_report,
     }
 
 
 def _resolve_ingest_backend(config: RunConfig) -> str:
     backend = config.ingest_backend
     if backend in {"osm_xml", "lanelet2_xml"}:
+        if config.input_path.suffix.lower() == ".xodr":
+            raise ValueError("Input is .xodr but ingest backend is not opendrive_xodr.")
+        return backend
+    if backend == "opendrive_xodr":
+        if config.input_path.suffix.lower() != ".xodr":
+            raise ValueError("opendrive_xodr backend expects .xodr input.")
         return backend
     if backend != "auto":
         raise ValueError(f"Unsupported ingest backend: {backend}")
+    if config.input_path.suffix.lower() == ".xodr":
+        return "opendrive_xodr"
     return "lanelet2_xml" if _looks_like_lanelet2_osm(config.input_path) else "osm_xml"
 
 

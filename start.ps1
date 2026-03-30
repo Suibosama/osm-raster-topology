@@ -29,11 +29,15 @@ if (-not $SkipInstall) {
         & $PythonExe -m pip install --upgrade pip
         & $PipExe install -e "$ProjectRoot"
         & $PipExe install -e "$ProjectRoot[gui]"
+        & $PipExe install pyproj
+        & $PipExe install rasterio
         & $PipExe install matplotlib
         New-Item -ItemType File -Path $BootstrapMarker -Force | Out-Null
     }
     else {
         Write-Host "Dependencies already installed. Use -SkipInstall to skip this check entirely."
+        & $PipExe install pyproj | Out-Null
+        & $PipExe install rasterio | Out-Null
         & $PipExe install matplotlib | Out-Null
     }
 }
@@ -50,7 +54,7 @@ try {
     }
 
     if ([string]::IsNullOrWhiteSpace($InputPath)) {
-        throw "InputPath is required for mode '$Mode'. Use -InputPath path\to\file.osm"
+        throw "InputPath is required for mode '$Mode'. Use -InputPath path\to\file.osm or .xodr"
     }
 
     if ([string]::IsNullOrWhiteSpace($OutputDir)) {

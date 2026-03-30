@@ -351,3 +351,99 @@ def _configure_fonts() -> None:
             break
     plt.rcParams["axes.unicode_minus"] = False
     plt.rcParams["font.size"] = 10
+
+
+def write_opendrive_report(bundle: dict[str, object], output_path: Path) -> None:
+    _configure_fonts()
+
+    metadata = bundle["metadata"]
+    validation = bundle["validation"]
+    preview_path = Path(bundle["artifacts"]["preview_png"])
+
+    roads = validation["roads"]
+    water = validation["water"]
+    polygons = validation["polygons"]
+    checks = validation["checks"]
+    opendrive = validation.get("opendrive", {})
+
+    fig = plt.figure(figsize=(14, 8.6), dpi=220)
+    gs = fig.add_gridspec(
+        2,
+        2,
+        width_ratios=[1.0, 1.3],
+        height_ratios=[1.0, 1.0],
+        left=0.07,
+        right=0.985,
+        top=0.89,
+        bottom=0.14,
+        wspace=0.24,
+        hspace=0.16,
+    )
+
+    ax_preview = fig.add_subplot(gs[0, 0])
+    ax_counts = fig.add_subplot(gs[0, 1])
+    ax_opendrive = fig.add_subplot(gs[1, 0])
+    ax_diag = fig.add_subplot(gs[1, 1])
+
+    _draw_preview(ax_preview, preview_path)
+    _draw_feature_counts(ax_counts, roads, water, polygons)
+    _draw_opendrive_panel(ax_opendrive, opendrive)
+    _draw_diagnostics(ax_diag, fig.add_axes([0, 0, 0, 0]), checks, {}, hide_note=True)
+
+    fig.suptitle("OpenDRIVE Report", fontsize=18, fontweight="bold", y=0.975)
+    fig.text(
+        0.015,
+        0.948,
+        f"杈撳叆鏂囦欢: {metadata['input_path']} | 鍍忕礌鍒嗚鲸鐜? {metadata['pixel_size']} m | 鎷撴墤瓒呴噰鏍? {metadata['topology_oversample']}x",
+        fontsize=8.5,
+        color="#4f5b4f",
+        va="top",
+    )
+
+    fig.savefig(output_path, dpi=220, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def _draw_opendrive_panel(ax: plt.Axes, opendrive: dict[str, object]) -> None:
+    road_type_counts = opendrive.get("road_type_counts", {})
+    road_types = list(road_type_counts.keys())[:8]
+    counts = np.array([road_type_counts.get(key, 0) for key in road_types], dtype=float)
+
+    if len(road_types) == 0:
+        road_types = ["unknown"]
+        counts = np.array([0], dtype=float)
+
+    x = np.arange(len(road_types))
+    ax.bar(x, counts, color="#2f7d32", edgecolor="#1f5b22", linewidth=0.8)
+    ax.set_title("(c) OpenDRIVE Road Types", loc="left", fontsize=11.5, fontweight="bold", pad=6)
+    ax.set_xticks(x, road_types, rotation=20, ha="right")
+    ax.set_ylabel("道路数")
+    ax.grid(axis="y", color="#e6ebe6", linewidth=0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    tag_cov = opendrive.get("road_tag_coverage", {})
+    lane_ratio = tag_cov.get("lane_ratio", 0.0)
+    speed_ratio = tag_cov.get("speed_ratio", 0.0)
+    oneway_ratio = tag_cov.get("oneway_ratio", 0.0)
+    marking = opendrive.get("lane_marking", {})
+    area = opendrive.get("lane_area", {})
+
+    note = (
+        f"lanes 覆盖: {lane_ratio * 100:.1f}%\n"
+        f"maxspeed 覆盖: {speed_ratio * 100:.1f}%\n"
+        f"oneway 覆盖: {oneway_ratio * 100:.1f}%\n"
+        f"lane_marking 覆盖: {marking.get('coverage_ratio', 0.0) * 100:.1f}%\n"
+        f"lane_area 覆盖: {area.get('coverage_ratio', 0.0) * 100:.1f}%"
+    )
+    ax.text(
+        0.98,
+        0.02,
+        note,
+        transform=ax.transAxes,
+        fontsize=9,
+        color="#4f5b4f",
+        va="bottom",
+        ha="right",
+        bbox={"facecolor": "white", "edgecolor": "#d8ded8", "boxstyle": "round,pad=0.30"},
+    )

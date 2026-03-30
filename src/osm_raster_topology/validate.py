@@ -24,11 +24,14 @@ SEMANTIC_LAYER_RULES = {
 def validate_preservation(data: IngestedData, raster: RasterResult) -> dict[str, object]:
     road_features = [feature for feature in data.line_features if feature.category == "road"]
     water_features = [feature for feature in data.line_features if feature.category == "water"]
+    lane_marking_features = [feature for feature in data.line_features if feature.category == "lane_marking"]
     building_features = [feature for feature in data.polygon_features if _is_building(feature)]
     sports_features = [feature for feature in data.polygon_features if _is_sports(feature)]
+    lane_area_features = [feature for feature in data.polygon_features if feature.tags.get("xodr:feature") == "lane_area"]
 
     road_pixel_map = _collect_feature_pixels(raster.object_stacks.get("road", {}))
     water_pixel_map = _collect_feature_pixels(raster.object_stacks.get("water", {}))
+    lane_marking_pixel_map = _collect_feature_pixels(raster.object_stacks.get("lane_marking", {}))
     node_anchor_summary = _summarize_node_anchors(data, raster)
 
     road_source_components_planar = _count_source_components(road_features, z_aware=False)
@@ -58,11 +61,19 @@ def validate_preservation(data: IngestedData, raster: RasterResult) -> dict[str,
         data.bounds_xy,
         raster.pixel_size,
     )
+    lane_area_summary = _summarize_polygon_layer(
+        "lane_area",
+        lane_area_features,
+        raster.arrays["lane_area"],
+        data.bounds_xy,
+        raster.pixel_size,
+    )
     turn_restrictions = _summarize_turn_restrictions(data, raster)
     lanelet_summary = _summarize_lanelet_relations(data)
 
     road_exported_count = len(road_pixel_map)
     water_exported_count = len(water_pixel_map)
+    lane_marking_exported_count = len(lane_marking_pixel_map)
 
     checks = {
         "road_component_delta_planar": road_raster_components - road_source_components_planar,
@@ -80,6 +91,9 @@ def validate_preservation(data: IngestedData, raster: RasterResult) -> dict[str,
         "node_anchor_missing_pixel_count": node_anchor_summary["missing_pixel_count"],
         "node_anchor_out_of_bounds_count": node_anchor_summary["out_of_bounds_count"],
         "turn_restriction_missing_count": turn_restrictions["missing_count"],
+        "lane_marking_missing_feature_count": len(
+            [fid for fid in (f.feature_id for f in lane_marking_features) if fid not in lane_marking_pixel_map]
+        ),
     }
 
     summary = {
@@ -108,6 +122,8 @@ def validate_preservation(data: IngestedData, raster: RasterResult) -> dict[str,
         "lanelet_neighbor_ratio": lanelet_summary["neighbor_ratio"],
         "lanelet_successor_ratio": lanelet_summary["successor_ratio"],
     }
+
+    opendrive_summary = _summarize_opendrive(road_features, lane_marking_features, lane_area_features, lane_marking_pixel_map, lane_area_summary)
 
     return {
         "summary": summary,
@@ -146,10 +162,12 @@ def validate_preservation(data: IngestedData, raster: RasterResult) -> dict[str,
         "polygons": {
             "building": building_summary,
             "sports": sports_summary,
+            "lane_area": lane_area_summary,
         },
         "semantics": semantic_coverage,
         "turn_restrictions": turn_restrictions,
         "lanelet": lanelet_summary,
+        "opendrive": opendrive_summary,
     }
 
 
@@ -370,7 +388,59 @@ def _semantic_value_for_polygon(layer_name: str, tags: dict[str, str]) -> int:
         return 1 if "building" in tags or "building:part" in tags else 0
     if layer_name == "sports_class":
         return 1 if tags.get("leisure", "") in {"pitch", "stadium", "sports_centre", "sports_hall", "swimming_pool", "track"} or "sport" in tags else 0
+    if layer_name == "lane_area":
+        return 1 if tags.get("xodr:feature") == "lane_area" else 0
     return 0
+
+
+def _summarize_opendrive(
+    road_features: list[LineFeature],
+    lane_marking_features: list[LineFeature],
+    lane_area_features: list[PolygonFeature],
+    lane_marking_pixel_map: dict[int, set[tuple[int, int]]],
+    lane_area_summary: dict[str, object],
+) -> dict[str, object]:
+    road_type_counts: dict[str, int] = defaultdict(int)
+    road_with_lanes = 0
+    road_with_speed = 0
+    road_with_road_type = 0
+    road_with_oneway = 0
+    for feature in road_features:
+        road_type = feature.tags.get("xodr:road_type", "unknown")
+        road_type_counts[road_type] += 1
+        if "lanes" in feature.tags:
+            road_with_lanes += 1
+        if "maxspeed" in feature.tags:
+            road_with_speed += 1
+        if "xodr:road_type" in feature.tags:
+            road_with_road_type += 1
+        if "oneway" in feature.tags:
+            road_with_oneway += 1
+
+    lane_marking_missing_ids = [f.feature_id for f in lane_marking_features if f.feature_id not in lane_marking_pixel_map]
+    lane_marking_summary = {
+        "source_feature_count": len(lane_marking_features),
+        "exported_feature_count": len(lane_marking_features) - len(lane_marking_missing_ids),
+        "missing_feature_count": len(lane_marking_missing_ids),
+        "coverage_ratio": _safe_ratio(len(lane_marking_features) - len(lane_marking_missing_ids), len(lane_marking_features)),
+    }
+
+    return {
+        "road_type_counts": dict(sorted(road_type_counts.items(), key=lambda item: item[0])),
+        "road_tag_coverage": {
+            "lane_ratio": _safe_ratio(road_with_lanes, len(road_features)),
+            "speed_ratio": _safe_ratio(road_with_speed, len(road_features)),
+            "road_type_ratio": _safe_ratio(road_with_road_type, len(road_features)),
+            "oneway_ratio": _safe_ratio(road_with_oneway, len(road_features)),
+        },
+        "lane_marking": lane_marking_summary,
+        "lane_area": {
+            "source_feature_count": int(lane_area_summary.get("source_feature_count", 0)),
+            "exported_feature_count": int(lane_area_summary.get("exported_feature_count", 0)),
+            "missing_feature_count": int(lane_area_summary.get("missing_feature_count", 0)),
+            "coverage_ratio": float(lane_area_summary.get("semantic_coverage", {}).get("coverage_ratio", 0.0)),
+        },
+    }
 
 
 def _summarize_turn_restrictions(data: IngestedData, raster: RasterResult) -> dict[str, object]:
